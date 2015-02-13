@@ -1,0 +1,58 @@
+.textSelectionDisabled {
+   -moz-user-select: none;
+   -webkit-user-select: none;
+   -webkit-text-size-adjust: none;
+   -ms-user-select: none;
+   user-select: none;
+}
+
+body {
+   margin: 10px !important;
+   font-family: "Gill Sans Light", Verdana, Arial, sans-serif !important;
+   font-size: 10pt !important;
+}
+
+/* Disable the outline when clicking on plots/axes */
+:focus {
+   outline: none;
+}
+
+::-moz-focus-inner {
+   border: 0;
+}
+
+#main_panel {
+   display: none;
+}
+
+#legend {
+   width: 300px;
+   min-width: 300px;
+   max-width: 300px;
+}
+
+#legend td {
+   font-size: 8pt;
+}
+
+.legendColor {
+   border: 1px solid black;
+   width: 20px;
+   height: 20px;
+   min-width: 20px;
+   min-height: 20px;
+   max-width: 20px;
+   max-height: 20px;
+   line-height: 20px;
+}
+
+#mapArea {
+   border: 1px solid black;
+   width: auto;
+   height: 400px;
+   background-color: lightcyan;
+}
+
+#grapher_area {
+   display: none;
+}

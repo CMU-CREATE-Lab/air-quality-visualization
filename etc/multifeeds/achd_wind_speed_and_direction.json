@@ -1,0 +1,9 @@
+{
+   "name" : "achd_wind_speed_and_direction",
+   "spec" : [
+      {
+         "feeds" : "whereOr=id=1,id=3,id=26,id=28,id=32,id=35,id=43",
+         "channels" : ["SONICWS_MPH", "RWS_MPH", "SONICWD_DEG", "RWD_DEG"]
+      }
+   ]
+}

@@ -1,0 +1,10 @@
+{
+   "name" : "achd_pm_10",
+   "spec" : [
+      {
+         "feeds" : "whereOr=id=3,id=23,id=24,id=27,id=29,id=30,id=31",
+         "channels" : ["PM10_UG_M3", "PM10B_UG_M3"]
+      }
+   ]
+}
+

@@ -1,0 +1,607 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+   <title>ACHD</title>
+   <style type="text/css">
+      body {
+         font-family: 'Open Sans', 'Helvetica', sans-serif !important;
+         font-weight: 400 !important;
+         font-size: 16px !important;
+      }
+
+      #main_panel {
+         display: none;
+         width: 912px;
+      }
+
+      #channels_and_locations_panel {
+         padding-left: 10px;
+         width: 300px;
+      }
+
+      /*================================================================================================================
+       * MAP
+       *==============================================================================================================*/
+
+      #map_area {
+         border: 1px solid black;
+         width: 600px;
+         height: 400px;
+      }
+
+      /*================================================================================================================
+       * GRAPHER
+       *==============================================================================================================*/
+
+      .date_axis {
+         height: 42px;
+         z-index: 2;
+         border: 1px solid black;
+         border-bottom-width: 0;
+      }
+
+      .y_axis {
+         width: 42px;
+         border: 1px solid black;
+         border-left-width: 0;
+      }
+
+      .y_axis_label {
+         position: absolute;
+         text-align: center;
+         font-size: 8pt;
+         height: auto;
+      }
+
+      .rotate_90 {
+         transform: rotate(90deg);
+         -ms-transform: rotate(90deg);
+         -webkit-transform: rotate(90deg);
+      }
+   </style>
+   <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCGR21nG0gjPnQZtlCbPIxpDcJ2T2fOrf8&sensor=false"></script>
+   <script type="text/javascript" src="lib/jquery/jquery-1.11.2.min.js"></script>
+   <script type="text/javascript" src="lib/superagent/superagent.js"></script>
+   <script type="text/javascript" src="lib/canvas-layer/src/CanvasLayer.js"></script>
+   <script type="text/javascript" src="lib/handlebars/handlebars-v2.0.0.js"></script>
+   <script type="text/javascript" src="https://esdr.cmucreatelab.org/lib/bodytrack-grapher/org/bodytrack/grapher/gwt/grapher2.nocache.js"></script>
+   <script type="text/javascript" src="https://esdr.cmucreatelab.org/lib/bodytrack-grapher/org/bodytrack/grapher/MultiplotGrapher.js"></script>
+   <script type="text/javascript">
+      var ESDR_API_ROOT_URL = 'https://esdr.cmucreatelab.org/api/v1';
+
+      var TIMESTAMP_FORMAT = "YYYY-MM-DD HH:mm";
+      var DEVICE_PIXEL_RATIO = ('devicePixelRatio' in window && window.devicePixelRatio > 1) ? window.devicePixelRatio : 1;
+      var POINT_RADIUS_HAS_DATA = 6;
+      var POINT_RADIUS_NO_DATA = 4;
+      var TWO_PI = 2 * Math.PI;
+
+      // Got concentration descriptions and ranges from slides 5 and 11 in http://www.epa.gov/international/public-participation-guide/workshopPDFs/zell-aqi.pdf
+      // and RGB color codes from http://www.airnowapi.org/aq101
+      var PARTICLE_CONCENTRATION_INDEX = [
+         {
+            min : 0,
+            max : 15.4,
+            name : "Good",
+            description : "Normal, healthy concentration. No suggested restrictions on activity.",
+            color : "rgba(0,228,0,0.6)" // "#00e400"
+         },
+         {
+            min : 15.5,
+            max : 40.4,
+            name : "Moderate",
+            description : "Unusually sensitive people should reduce prolonged or heavy exertion",
+            color : "rgba(255,255,0,0.6)" // "#ffff00"
+         },
+         {
+            min : 40.5,
+            max : 65.4,
+            name : "Unhealthy for Sensitive Groups",
+            description : "Sensitive groups should reduce prolonged or heavy exertion",
+            color : "rgba(255,126,0,0.6)" // "#ff7e00"
+         },
+         {
+            min : 65.5,
+            max : 150.4,
+            name : "Unhealthy",
+            description : "Sensitive groups should avoid prolonged or heavy exertion; general public should reduce prolonged or heavy exertion",
+            color : "rgba(255,0,0,0.6)" // "#ff0000"
+         },
+         {
+            min : 150.5,
+            max : 250.4,
+            name : "Very Unhealthy",
+            description : "Sensitive groups should avoid all physical activity outdoors; general public should avoid prolonged or heavy exertion",
+            color : "rgba(153,0,76,0.6)" // "#99004c"
+         },
+         {
+            min : 250.5,
+            max : 500.4,
+            name : "Hazardous",
+            description : "Everyone should avoid all physical activity outdoors",
+            color : "rgba(126,0,35,0.6)" // "#7e0023"
+         }
+      ];
+
+      var feedsMap = {};
+      var channelsToFeedsMap = {};
+
+      var map;
+      var mapProjection;
+      var canvasLayer;
+      var context;
+      var isCanvasInitialized = false;
+      var canvasTransformProperties = {
+         neWorldCoords : null,
+         swWorldCoords : null,
+         widthWorldCoords : null,
+         heightWorldCoords : null,
+         xMultiplier : null,
+         yMultiplier : null
+      };
+
+      var markers = {};
+      var currentlySelectedMarkers = {};
+      var numCurrentlySelectedMarkers = 0;
+      var MAX_NUM_SELECTED_MARKERS = 5;
+
+      var availablePlotColors = ["#990000", "#009900", "#000099", "#999900", "#6600ff"];
+      var usedPlotColorsByDeviceId = {};
+
+      // grapher stuff
+      var dateAxis;
+      var plotContainer;
+      var grapher;
+
+      window.grapherLoad = function() {
+         console.log("Fetching data...");
+         superagent
+               .get(ESDR_API_ROOT_URL + '/feeds?where=productId=1,minTimeSecs>0&fields=id,name,userId,latitude,longitude,channelBounds')
+               .end(function(err, res) {
+                       if (err) {
+                          throw err;
+                       }
+
+                       if (res) {
+                          if (res.status == 200) {
+                             if (res.body) {
+                                if (res.body.data) {
+                                   console.log("Data fetching done!");
+                                   return parseData(res.body.data);
+                                }
+                                throw new Error("Missing response data!");
+                             }
+                             throw new Error("Missing response body!");
+                          }
+                          throw new Error("Unexpected response status [" + res.status + "]");
+                       }
+                       throw new Error("No response from ESDR!");
+                    });
+      };
+
+      function parseData(feedChannelBounds) {
+         console.log("Parsing data...");
+         console.log(JSON.stringify(feedChannelBounds, null, 3));
+         feedChannelBounds.rows.forEach(function(feed) {
+            if (feed['channelBounds'] && feed['channelBounds']['channels']) {
+               var channelNames = Object.keys(feed['channelBounds']['channels']).sort();
+
+               feedsMap[feed.id] = {
+                  id : feed.id,
+                  name : feed.name,
+                  userId : feed.userId,
+                  latitude : feed.latitude,
+                  longitude : feed.longitude,
+                  channelNames : channelNames
+               };
+
+               // add each channel to the channelsToFeedsMap map, mapping it to this feedId
+               channelNames.forEach(function(channelName) {
+                  if (!(channelName in channelsToFeedsMap)) {
+                     channelsToFeedsMap[channelName] = {
+                        feeds : [],
+                        minTimeSecs : Number.MAX_VALUE,
+                        maxTimeSecs : Number.MIN_VALUE,
+                        minValue : Number.MAX_VALUE,
+                        maxValue : Number.MIN_VALUE
+                     };
+                  }
+                  channelsToFeedsMap[channelName].feeds.push(feed);
+                  channelsToFeedsMap[channelName].minTimeSecs = Math.min(feed['channelBounds']['channels'][channelName].minTimeSecs, channelsToFeedsMap[channelName].minTimeSecs);
+                  channelsToFeedsMap[channelName].maxTimeSecs = Math.max(feed['channelBounds']['channels'][channelName].maxTimeSecs, channelsToFeedsMap[channelName].maxTimeSecs);
+                  channelsToFeedsMap[channelName].minValue = Math.min(feed['channelBounds']['channels'][channelName].minValue, channelsToFeedsMap[channelName].minValue);
+                  channelsToFeedsMap[channelName].maxValue = Math.max(feed['channelBounds']['channels'][channelName].maxValue, channelsToFeedsMap[channelName].maxValue);
+               });
+            }
+         });
+
+         console.log("Parsing done!");
+         initialize();
+      }
+
+      function setSizes() {
+         var yAxisElement = $("#y_axis");
+         var yAxisLabelElement = $("#y_axis_label");
+         var totalWidth = $("#main_panel").width();
+         var yAxisWidth = yAxisElement.width();
+         var yAxisHeight = yAxisElement.height();
+         yAxisLabelElement.width(yAxisHeight); // set the width == height since we're rotating
+         var yAxisLabelHeight = yAxisLabelElement.height();
+         var plotContainerWidth = totalWidth - yAxisWidth - 2;  // subtract 2 to allow for borders
+
+         // compute the position of the y-axis label
+         var yAxisLabelLeft = Math.round(yAxisWidth + yAxisLabelHeight / 2 - yAxisHeight / 2 + 2);
+         var yAxisLabelTop = Math.round(yAxisHeight / 2 - yAxisLabelHeight / 2);
+
+         // set positions and sizes
+         yAxisLabelElement.css("top", yAxisLabelTop + "px").css("left", yAxisLabelLeft + "px");
+         dateAxis.setSize(totalWidth - 2, $("#date_axis").height(), SequenceNumber.getNext());
+         dateAxis.addAxisChangeListener(function(cursorChangeEvent) {
+            console.log("Caught axis change event!");
+            console.log(cursorChangeEvent);
+            renderMarkers();
+         });
+
+         // TODO
+         //         plotContainer.setSize(plotContainerWidth, $("#plot").height(), SequenceNumber.getNext());
+         //         grapher.updateYAxesSizes();
+      }
+
+      function initialize() {
+         $("#loading_panel").hide();
+         $("#main_panel").show();
+
+         initializeMap();
+
+         // populate channel selector
+         var channelSelectorElement = $("#channel_selector");
+         Object.keys(channelsToFeedsMap).sort().forEach(function(channelName) {
+            var numFeeds = channelsToFeedsMap[channelName].feeds.length;
+            channelSelectorElement.append('<option value="' + channelName + '">' + channelName + '&nbsp;&nbsp;&nbsp;&nbsp;(' + numFeeds + ')</option>');
+         });
+         channelSelectorElement.on('change', handleChannelChange);
+
+         dateAxis = new DateAxis("date_axis", "horizontal");
+         // TODO
+         //         dateAxis.setMaxRange(channelMinTimeSecs, channelMaxTimeSecs);
+
+         // set the sizes of the various plot elements
+         setSizes();
+
+         // set up window resize handler
+         $(window).resize(setSizes);
+
+      }
+
+      function initializeMap() {
+         console.log("Loading map...");
+         var mapOptions = {
+            center : new google.maps.LatLng(40.45379874134349, -79.97747773040771),
+            zoom : 10,
+            minZoom : 10,
+            mapTypeId : google.maps.MapTypeId.ROADMAP,
+            panControl : false,
+            zoomControl : true,
+            mapTypeControl : true,
+            scaleControl : true,
+            streetViewControl : false,
+            overviewMapControl : false
+         };
+         map = new google.maps.Map(document.getElementById("map_area"), mapOptions);
+
+         // Add an idle event listener ONCE to handle map loading.
+         google.maps.event.addListenerOnce(map, 'idle', function() {
+            console.log("Map loading done!");
+            mapProjection = map.getProjection();
+            initializeCanvas();
+            handleChannelChange();
+         });
+
+         // listen for mouse move and click events
+         google.maps.event.addListener(map, 'mousemove', createCanvasFeatureDetectingMouseEventHandler(
+               function(marker) {
+                  map.setOptions({ draggableCursor : 'pointer' });
+               },
+               function() {
+                  map.setOptions({ draggableCursor : null });
+               }
+         ));
+         google.maps.event.addListener(map, 'click', createCanvasFeatureDetectingMouseEventHandler(
+               function(marker) {
+                  var id = marker['id'];
+
+                  // if the selected marker is already selected, then remove it
+                  if (currentlySelectedMarkers.hasOwnProperty(id)) {
+                     setMarkerSelected(id, currentlySelectedMarkers[id], false);
+                  }
+                  else {
+                     if (numCurrentlySelectedMarkers < MAX_NUM_SELECTED_MARKERS) {
+                        setMarkerSelected(id, marker, true);
+                     }
+                  }
+               },
+               function() {
+                  // nothing to do
+               }
+         ));
+      }
+
+      function createCanvasFeatureDetectingMouseEventHandler(featureDetectedCallback, featureNotDetectedCallback) {
+         return function(evt) {
+            if (evt && evt.latLng && mapProjection != null) {
+
+               // convert the mouse event latLng to canvas coords
+               var eventPoint = worldPointToCanvasPixelCoords(mapProjection.fromLatLngToPoint(evt.latLng));
+
+               // get the canvas color at this pixel to see whether there's a point drawn here (very important to take
+               // the DEVICE_PIXEL_RATIO into account here!)
+               var imageData = context.getImageData(eventPoint.x * DEVICE_PIXEL_RATIO, eventPoint.y * DEVICE_PIXEL_RATIO, 1, 1);
+               if (imageData.data[0] != 0 ||
+                   imageData.data[1] != 0 ||
+                   imageData.data[2] != 0) {
+
+                  // iterate over all the points to see which is closest to this pixel (TODO: make this smarter?)
+                  var mapBounds = map.getBounds();
+                  var bestPoint = null;
+                  var bestDistance = POINT_RADIUS_HAS_DATA;
+                  $.each(markers, function(index, marker) {
+                     // TODO: this bounds containment check could be smarter...
+                     if (mapBounds.contains(marker['location'])) {
+
+                        // compute the canvas position for this marker
+                        var candidate = worldPointToCanvasPixelCoords(marker['worldPoint']);
+
+                        // compute the distance between this marker's point and the event point
+                        var distance = Math.sqrt(Math.pow(candidate.x - eventPoint.x, 2) + Math.pow(candidate.y - eventPoint.y, 2));
+
+                        // if the distance is less than the bestDistance found so far, then we've found a hit
+                        if (distance <= bestDistance) {
+                           bestPoint = marker;
+                           bestDistance = distance;
+                        }
+                     }
+                  });
+
+                  if (bestPoint != null) {
+                     featureDetectedCallback(bestPoint);
+                  }
+                  else {
+                     featureNotDetectedCallback();
+                  }
+               }
+               else {
+                  featureNotDetectedCallback();
+               }
+            }
+         }
+      }
+
+      function initializeCanvas() {
+         // initialize the canvasLayer
+         var canvasLayerOptions = {
+            map : map,
+            resizeHandler : function() {
+               // nothing to do
+            },
+            animate : false,
+            updateHandler : renderMarkers
+         };
+         canvasLayer = new CanvasLayer(canvasLayerOptions);
+         context = canvasLayer.canvas.getContext('2d');
+         isCanvasInitialized = true;
+
+         // Poke google maps and trigger a resize whenever we detect a browser resize
+         window.addEventListener('resize',
+                                 function() {
+                                    google.maps.event.trigger(map, 'resize')
+                                 },
+                                 false);
+      }
+
+      function renderMarkers() {
+
+         // clear previous canvas contents
+         context.clearRect(0, 0, canvasLayer.canvas.width, canvasLayer.canvas.height);
+
+         // Update the properties required when transforming world points to canvas points
+         updateCanvasTransformProperties();
+
+         // render the points
+         var mapBounds = map.getBounds();
+         $.each(markers, function(markerId, marker) {
+            // TODO: this bounds containment check could be smarter...
+            if (mapBounds.contains(marker['location'])) {
+
+               // compute the canvas position for this point
+               var markerCoords = worldPointToCanvasPixelCoords(marker['worldPoint']);
+
+               drawPoint(markerCoords, marker);
+            }
+         });
+      }
+
+      function updateCanvasTransformProperties() {
+         var mapBounds = map.getBounds();
+         canvasTransformProperties.neWorldCoords = mapProjection.fromLatLngToPoint(mapBounds.getNorthEast());
+         canvasTransformProperties.swWorldCoords = mapProjection.fromLatLngToPoint(mapBounds.getSouthWest());
+         canvasTransformProperties.widthWorldCoords = canvasTransformProperties.neWorldCoords.x - canvasTransformProperties.swWorldCoords.x;
+         canvasTransformProperties.heightWorldCoords = canvasTransformProperties.swWorldCoords.y - canvasTransformProperties.neWorldCoords.y;
+
+         // we need to be careful here to use the canvas's *style* width/height here, and not the actual
+         // width/height which will be different on devices where the pixel ratio is not 1 (e.g. retina displays)
+         canvasTransformProperties.xMultiplier = $(canvasLayer.canvas).width() / canvasTransformProperties.widthWorldCoords;
+         canvasTransformProperties.yMultiplier = $(canvasLayer.canvas).height() / canvasTransformProperties.heightWorldCoords;
+      }
+
+      function worldPointToCanvasPixelCoords(worldPoint) {
+         return {
+            x : (worldPoint.x - canvasTransformProperties.swWorldCoords.x) * canvasTransformProperties.xMultiplier,
+            y : (worldPoint.y - canvasTransformProperties.neWorldCoords.y) * canvasTransformProperties.yMultiplier
+         };
+      }
+
+      function drawPoint(markerCoords, marker) {
+         var isNoData = marker['value'] == null;
+         var radius = (isNoData ? POINT_RADIUS_NO_DATA : POINT_RADIUS_HAS_DATA);
+         if (currentlySelectedMarkers.hasOwnProperty(marker['id'])) {
+            context.beginPath();
+            context.arc(markerCoords.x, markerCoords.y, radius + 1, 0, TWO_PI, false);
+            context.lineWidth = 2;
+            context.strokeStyle = '#000000';
+            context.stroke();
+         }
+
+         drawCircle(markerCoords, radius, isNoData ? "rgba(10,10,10,0.6)" : getColorForValue(marker['value']));
+      }
+
+      function drawCircle(centerPoint, radius, color) {
+         context.beginPath();
+         context.arc(centerPoint.x, centerPoint.y, radius, 0, TWO_PI, false);
+         context.fillStyle = color;
+         context.fill();
+      }
+
+      function handleChannelChange() {
+         console.log("handleChannelChange()");
+         markers = {};
+         currentlySelectedMarkers = {};
+
+         var selectedChannelName = $('#channel_selector').val();
+         console.log("Selected channel: [" + selectedChannelName + "]");
+         var feedsForMarkers;
+         if (selectedChannelName in channelsToFeedsMap) {
+            feedsForMarkers = channelsToFeedsMap[selectedChannelName]['feeds'];
+         }
+         else {
+            feedsForMarkers = [];
+            Object.keys(feedsMap).forEach(function(feedId) {
+               feedsForMarkers.push(feedsMap[feedId]);
+            });
+         }
+         feedsForMarkers.forEach(function(feed) {
+            var latLong = new google.maps.LatLng(feed['latitude'], feed['longitude']);
+            addMarker(feed.userId + ".feed_" + feed.id + "." + selectedChannelName, latLong)
+         });
+
+         var dateAxisAndGrapherContainer = $("#date_axis_and_grapher_container");
+         if (selectedChannelName && selectedChannelName.length > 0) {
+            dateAxisAndGrapherContainer.show();
+            var minTimeSecs = channelsToFeedsMap[selectedChannelName].minTimeSecs;
+            var maxTimeSecs = channelsToFeedsMap[selectedChannelName].maxTimeSecs;
+            console.log("handleChannelChange found this time range [" + minTimeSecs + ", " + maxTimeSecs + "]");
+            // set initial cursor to the midpoint of the available data--this will trigger the data change event,
+            // which will color the markers appropriately.
+            window.setTimeout(function() {
+               dateAxis.setMaxRange(minTimeSecs, maxTimeSecs);
+               window.setTimeout(function() {
+                  dateAxis.setRange(minTimeSecs, maxTimeSecs);
+                  window.setTimeout(function() {
+                     dateAxis.setCursorPosition((minTimeSecs + maxTimeSecs) / 2);
+                  }, 1);
+               }, 1);
+            }, 1);
+         }
+         else {
+            dateAxisAndGrapherContainer.hide()
+         }
+      }
+
+      // Add a marker to the map and push to the array.
+      function addMarker(id, location) {
+
+         markers[id] = {
+            id : id,
+            location : location,
+            worldPoint : mapProjection.fromLatLngToPoint(location),
+            value : null
+         };
+      }
+
+      function setMarkerSelected(id, marker, isSelected) {
+
+         if (isSelected) {
+            currentlySelectedMarkers[id] = marker;
+         }
+         else {
+            delete currentlySelectedMarkers[id];
+         }
+         numCurrentlySelectedMarkers = numCurrentlySelectedMarkers + (isSelected ? 1 : -1);
+
+         renderMarkers();
+
+         // finally, add or remove the channel as appropriate
+         // TODO:
+         // (isSelected) ? loadChannel(id) : removeChannel(id);
+      }
+
+      function getColorForValue(value) {
+         if (value) {
+            return getParticleConcentrationIndex(value)['color'];
+         }
+         return null;
+      }
+
+      function getParticleConcentrationIndex(value) {
+         if (value <= PARTICLE_CONCENTRATION_INDEX[0]['max']) {
+            return PARTICLE_CONCENTRATION_INDEX[0];
+         }
+         else if (value > PARTICLE_CONCENTRATION_INDEX[PARTICLE_CONCENTRATION_INDEX.length - 2]['max']) {
+            return PARTICLE_CONCENTRATION_INDEX[PARTICLE_CONCENTRATION_INDEX.length - 1];
+         }
+         else {
+            for (var i = 1; i < PARTICLE_CONCENTRATION_INDEX.length - 1; i++) {
+               if (value <= PARTICLE_CONCENTRATION_INDEX[i]['max']) {
+                  return PARTICLE_CONCENTRATION_INDEX[i];
+               }
+            }
+         }
+         return PARTICLE_CONCENTRATION_INDEX[PARTICLE_CONCENTRATION_INDEX.length - 1];
+      }
+   </script>
+</head>
+<body>
+
+<div id="loading_panel">Loading...</div>
+<div id="main_panel">
+   <table border="0" cellpadding="0" cellspacing="0">
+      <tr>
+         <td>
+            <div id="map_area"></div>
+         </td>
+         <td valign="top">
+            <div id="channels_and_locations_panel">
+               <select id="channel_selector">
+                  <option value="">Choose a sensor...</option>
+               </select>
+            </div>
+         </td>
+      </tr>
+      <tr>
+         <td colspan="2">
+            <div id="date_axis_and_grapher_container" style="display:none">
+               <div id="date_axis_container">
+                  <div id="date_axis" class="date_axis"></div>
+                  <div id="value_label"></div>
+               </div>
+            </div>
+         </td>
+      </tr>
+   </table>
+
+   <div id="grapher_container" class="noselect" style="display:none;">
+      <div id="title" style="text-align: center; margin-bottom:10px; font-size:larger"></div>
+      <table id="grapher" border="0" cellpadding="0" cellspacing="0" align="center">
+         <tr>
+            <td>
+               <div id="plot" class="plot" style="height:500px; border: 1px solid black;"></div>
+            </td>
+            <td>
+               <div id="y_axis" class="y_axis" style="position:relative;height:500px">
+                  <div id="y_axis_label" class="rotate_90 y_axis_label"></div>
+               </div>
+            </td>
+         </tr>
+      </table>
+   </div>
+</div>
+</body>
+</html>
