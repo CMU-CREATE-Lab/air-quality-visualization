@@ -3,7 +3,11 @@
    "spec" : [
       {
          "feeds" : "whereOr=id=1,id=3,id=26,id=28,id=32,id=35,id=43",
-         "channels" : ["SONICWD_DEG", "RWD_DEG"]
+         "channels" : ["SONICWD_DEG"]
+      },
+      {
+         "feeds" : "whereOr=id=26",
+         "channels" : ["RWD_DEG"]
       }
    ]
 }

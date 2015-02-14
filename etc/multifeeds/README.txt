@@ -17,6 +17,14 @@ achd.html file), I did these SQL queries to determine the feed IDs:
    +----+-----------------------------+
    7 rows in set (0.00 sec)
 
+   mysql> select id, name from Feeds where productId=1 and channelBounds like '%"RWD_DEG%';
+   +----+--------------------+
+   | id | name               |
+   +----+--------------------+
+   | 26 | Lawrenceville ACHD |
+   +----+--------------------+
+   1 row in set (0.00 sec)
+
    mysql> select id, name from Feeds where productId=1 and channelBounds like '%"SONICWS_MPH%';
    +----+-----------------------------+
    | id | name                        |
@@ -39,39 +47,54 @@ achd.html file), I did these SQL queries to determine the feed IDs:
    +----+--------------------+
    1 row in set (0.00 sec)
 
-   mysql> select id, name from Feeds where productId=1 and channelBounds like '%"RWD_DEG%';
-   +----+--------------------+
-   | id | name               |
-   +----+--------------------+
-   | 26 | Lawrenceville ACHD |
-   +----+--------------------+
-   1 row in set (0.00 sec)
-
-   mysql> select id, name from Feeds where productId=1 and (channelBounds like '%"PM10_UG_M3"%' or channelBounds like '%"PM10B_UG_M3"%');
+   mysql> select id, name from Feeds where productId=1 and channelBounds like '%"PM10_UG_M3"%';
    +----+----------------------------+
    | id | name                       |
    +----+----------------------------+
-   |  3 | North Braddock ACHD        |
    | 23 | Flag Plaza ACHD            |
    | 24 | Glassport High Street ACHD |
-   | 27 | Lawrenceville 2 ACHD       |
    | 29 | Liberty 2 ACHD             |
    | 30 | Lincoln ACHD               |
-   | 31 | Monroeville ACHD           |
    +----+----------------------------+
-   7 rows in set (0.00 sec)
+   4 rows in set (0.00 sec)
 
-   mysql> select id, name from Feeds where productId=1 and (channelBounds like '%"PM25B_UG_M3"%' or channelBounds like '%"PM25_2__UG_M3"%' or channelBounds like '%"PM25_UG_M3"%');
+   mysql> select id, name from Feeds where productId=1 and channelBounds like '%"PM10B_UG_M3"%';
+   +----+----------------------+
+   | id | name                 |
+   +----+----------------------+
+   |  3 | North Braddock ACHD  |
+   | 27 | Lawrenceville 2 ACHD |
+   | 31 | Monroeville ACHD     |
+   +----+----------------------+
+   3 rows in set (0.00 sec)
+
+   mysql> select id, name from Feeds where productId=1 and channelBounds like '%"PM25B_UG_M3"%';
    +----+----------------------+
    | id | name                 |
    +----+----------------------+
    |  1 | Avalon ACHD          |
-   | 26 | Lawrenceville ACHD   |
    | 27 | Lawrenceville 2 ACHD |
-   | 29 | Liberty 2 ACHD       |
-   | 30 | Lincoln ACHD         |
    +----+----------------------+
-   5 rows in set (0.00 sec)
+   2 rows in set (0.00 sec)
+
+   mysql> select id, name from Feeds where productId=1 and channelBounds like '%"PM25_2__UG_M3"%';
+   +----+--------------------+
+   | id | name               |
+   +----+--------------------+
+   | 26 | Lawrenceville ACHD |
+   | 29 | Liberty 2 ACHD     |
+   +----+--------------------+
+   2 rows in set (0.00 sec)
+
+   mysql> select id, name from Feeds where productId=1 and channelBounds like '%"PM25_UG_M3"%';
+   +----+--------------------+
+   | id | name               |
+   +----+--------------------+
+   | 26 | Lawrenceville ACHD |
+   | 29 | Liberty 2 ACHD     |
+   | 30 | Lincoln ACHD       |
+   +----+--------------------+
+   3 rows in set (0.00 sec)
 
 
 I then crafted the multifeed JSON (in this directory) as appropriate, and created the multifeeds in ESDR using these

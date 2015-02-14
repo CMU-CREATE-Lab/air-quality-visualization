@@ -3,7 +3,11 @@
    "spec" : [
       {
          "feeds" : "whereOr=id=1,id=3,id=26,id=28,id=32,id=35,id=43",
-         "channels" : ["SONICWS_MPH", "RWS_MPH"]
+         "channels" : ["SONICWS_MPH"]
+      },
+      {
+         "feeds" : "whereOr=id=26",
+         "channels" : ["RWS_MPH"]
       }
    ]
 }

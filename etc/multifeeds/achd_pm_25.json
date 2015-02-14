@@ -2,8 +2,16 @@
    "name" : "achd_pm_25",
    "spec" : [
       {
-         "feeds" : "whereOr=id=1,id=26,id=27,id=29,id=30",
-         "channels" : ["PM25_UG_M3", "PM25B_UG_M3", "PM25_2__UG_M3"]
+         "feeds" : "whereOr=id=1,id=27",
+         "channels" : ["PM25B_UG_M3"]
+      },
+      {
+         "feeds" : "whereOr=id=26,id=29",
+         "channels" : ["PM25_2__UG_M3"]
+      },
+      {
+         "feeds" : "whereOr=id=26,id=29,id=30",
+         "channels" : ["PM25_UG_M3"]
       }
    ]
 }
